@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.18.2"
+    plugin_version = "0.18.3"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -868,7 +868,12 @@ class MediaCoverGenerator(_PluginBase):
 
     @staticmethod
     def __supports_anonymous_route() -> bool:
-        return importlib.util.find_spec("app.adapters.web.plugin.routes") is not None
+        # 部分 MoviePilot 版本（如 v2.15.6）没有 app.adapters 包，find_spec 会抛
+        # ModuleNotFoundError；此前未捕获导致 get_api() 整体失败、所有路由未注册。
+        try:
+            return importlib.util.find_spec("app.adapters.web.plugin.routes") is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            return False
 
     @staticmethod
     def __response_model():
