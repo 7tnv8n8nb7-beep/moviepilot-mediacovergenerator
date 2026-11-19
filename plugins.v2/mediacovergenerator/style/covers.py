@@ -1213,7 +1213,6 @@ class Stack(Cover):
         self.cards = []
         for index in range(self.count):
             card = ImageEnhance.Contrast(self.fit(index, size)).enhance(1.05).convert("RGBA")
-            card.alpha_composite(border)
             card.putalpha(mask)
             self.cards.append(card)
         # 标题落在左侧的留白区
@@ -1284,6 +1283,12 @@ class Shutter(Cover):
     SWEEP = 0.55            # 相邻竖条的延迟，占转场的比例
     TRAVEL = 1.30           # 条落下的行程（画布高度的倍数），中段留出黑色缝
 
+    def _scene_ground(self, index):
+        """整幅背景：海报艺术图铺满全屏，轻微模糊、调亮到能看清画面。"""
+        radius = max(1.0, self.blur_size * 0.06 * self.s)
+        blurred = self.picture(index).cover(self.size).filter(ImageFilter.GaussianBlur(radius))
+        return ImageEnhance.Brightness(blurred).enhance(0.74).convert("RGBA")
+
     def prepare(self):
         W, H, s = self.W, self.H, self.s
         # 每一幕 = 同一张海报的虚化背景 + 右侧大海报卡
@@ -1293,17 +1298,16 @@ class Shutter(Cover):
         size = (card_w * scale, card_h * scale)
         radius = int(16 * s * scale)
         mask = rounded_mask(size, radius, supersample=2)
-        border = border_layer(size, radius, (255, 255, 255, 70), 2.5 * s * scale)
         self.scenes = []
         for index in range(self.count):
-            canvas = self.backdrop(index, 0.34).convert("RGBA")
+            canvas = self._scene_ground(index)
             card = ImageEnhance.Contrast(self.fit(index, size)).enhance(1.05).convert("RGBA")
-            card.alpha_composite(border)
             card.putalpha(mask)
             turned = card.resize((card_w, card_h), Image.Resampling.BOX)
-            glow = turned.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 16 * s)))
+            glow = turned.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 9 * s)))
+            glow = glow.point(lambda value: int(value * 0.35))
             shadow = Image.new("RGBA", self.size, (0, 0, 0, 0))
-            shadow.paste(glow, (int(W * 0.76 - card_w / 2.0), int(H * 0.5 - card_h / 2.0 + 10 * s)))
+            shadow.paste(glow, (int(W * 0.76 - card_w / 2.0), int(H * 0.5 - card_h / 2.0 + 5 * s)))
             canvas.alpha_composite(shadow)
             canvas.alpha_composite(turned, (int(W * 0.76 - card_w / 2.0), int(H * 0.5 - card_h / 2.0)))
             self.scenes.append(canvas)
