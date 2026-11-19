@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.18.3"
+    plugin_version = "0.18.4"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -1464,41 +1464,56 @@ class MediaCoverGenerator(_PluginBase):
             },
         ]
 
+    # 前端配置项 -> 插件属性（完整覆盖官方 default_form_model / init_plugin）
+    _FRONTEND_CONFIG_ATTRS = {
+        "enabled": "_enabled", "update_now": "_update_now",
+        "transfer_monitor": "_transfer_monitor", "notify": "_notify",
+        "cron": "_cron", "rotate_style": "_rotate_style", "delay": "_delay",
+        "selected_servers": "_selected_servers", "include_libraries": "_include_libraries",
+        "sort_by": "_sort_by", "title_config": "_title_config",
+        "cover_style": "_cover_style", "cover_style_base": "_cover_style_base",
+        "cover_style_variant": "_cover_style_variant",
+        "zh_font_preset": "_zh_font_preset", "en_font_preset": "_en_font_preset",
+        "zh_font_custom": "_zh_font_custom", "en_font_custom": "_en_font_custom",
+        "zh_font_size": "_zh_font_size", "en_font_size": "_en_font_size",
+        "zh_font_offset": "_zh_font_offset", "title_spacing": "_title_spacing",
+        "en_line_spacing": "_en_line_spacing", "zh_letter_spacing": "_zh_letter_spacing",
+        "en_letter_spacing": "_en_letter_spacing", "blur_size": "_blur_size",
+        "color_ratio": "_color_ratio", "title_scale": "_title_scale",
+        "use_primary": "_use_primary", "resolution": "_resolution",
+        "bg_color_mode": "_bg_color_mode", "custom_bg_color": "_custom_bg_color",
+        "animation_duration": "_animation_duration", "animation_fps": "_animation_fps",
+        "animation_resolution": "_animation_resolution",
+        "animation_reduce_colors": "_animation_reduce_colors",
+        "animation_image_count": "_animation_image_count",
+        "covers_input": "_covers_input", "covers_output": "_covers_output",
+        "save_recent_covers": "_save_recent_covers",
+        "covers_history_limit_per_library": "_covers_history_limit_per_library",
+        "covers_page_history_limit": "_covers_page_history_limit",
+        "clean_images": "_clean_images", "clean_fonts": "_clean_fonts",
+    }
+
     def api_frontend_config(self) -> Dict[str, Any]:
-        """新前端：返回配置字典。"""
-        return {
-            "enabled": self._enabled,
-            "update_now": self._update_now,
-            "transfer_monitor": self._transfer_monitor,
-            "notify": self._notify,
-            "cron": self._cron or "",
-            "selected_servers": list(self._selected_servers or []),
-            "cover_style": self._cover_style,
-            "cover_style_base": self._cover_style_base,
-            "cover_style_variant": self._cover_style_variant,
-            "sort_by": self._sort_by,
-            "resolution": self._resolution,
-            "animation_duration": self._animation_duration,
-            "animation_fps": self._animation_fps,
-            "blur_size": self._blur_size,
-            "color_ratio": self._color_ratio,
-        }
+        """新前端：返回全部配置字段（与官方 default_form_model 对齐）。"""
+        result = {}
+        for key, attr in self._FRONTEND_CONFIG_ATTRS.items():
+            result[key] = getattr(self, attr, None)
+        result["cover_style_base"] = getattr(self, "_cover_style_base", "static_1")
+        result["cover_style_variant"] = getattr(self, "_cover_style_variant", "animated")
+        return result
 
     def api_frontend_save_config(self, config_payload: dict = None) -> Dict[str, Any]:
-        """新前端：保存配置（只更新前端可编辑的字段，保留其余原值）。"""
+        """新前端：保存全部配置字段，复用官方 __update_config 落盘。"""
         payload = config_payload or {}
-        mapping = {
-            "enabled": "_enabled", "update_now": "_update_now",
-            "transfer_monitor": "_transfer_monitor", "notify": "_notify",
-            "cron": "_cron", "selected_servers": "_selected_servers",
-            "cover_style": "_cover_style", "sort_by": "_sort_by",
-            "resolution": "_resolution", "animation_duration": "_animation_duration",
-            "animation_fps": "_animation_fps", "blur_size": "_blur_size",
-            "color_ratio": "_color_ratio",
-        }
-        for key, attr in mapping.items():
+        for key, attr in self._FRONTEND_CONFIG_ATTRS.items():
             if key in payload and hasattr(self, attr):
                 setattr(self, attr, payload[key])
+        # cover_style 由 base+variant 组合，避免前端传值与内部不一致
+        try:
+            self._cover_style = self.__compose_cover_style(
+                self._cover_style_base, self._cover_style_variant)
+        except Exception:
+            pass
         try:
             self.__update_config()
         except Exception as error:
@@ -1519,32 +1534,47 @@ class MediaCoverGenerator(_PluginBase):
         if not self._all_libraries and self._selected_servers:
             self._all_libraries = [lib for lib in self.__libraries_for_form()
                                    if lib["server"] in self._selected_servers]
+        status_map = self.get_data("library_status") or {}
+        if not isinstance(status_map, dict):
+            status_map = {}
+
         libraries = []
         for lib in (self._all_libraries or []):
             if not isinstance(lib, dict):
                 continue
             key = lib["value"]
-            libraries.append({
-                "name": lib.get("library") or lib.get("name") or key,
+            library_name = lib.get("library") or lib.get("name") or key
+            own = self._library_styles.get(key) or ""
+            item = {
+                "name": library_name,
                 "server": lib.get("server", ""),
                 "key": key,
+                "encoded_key": quote(str(key), safe=""),
                 "active": self.__in_batch(key, lib.get("type")),
-                "own_style": self._library_styles.get(key) or "",
-            })
+                "own_style": own,
+                "status": status_map.get(key),
+            }
+            if own:
+                try:
+                    ov, oi = self.__get_cover_style_parts(own)
+                    item["own_variant"], item["own_index"] = ov, oi
+                except Exception:
+                    pass
+            libraries.append(item)
 
-        # 历史封面（轻量，只列名字和时间；图片走 /saved_cover 单独取）
+        # 历史封面
+        all_covers = self.__list_saved_covers()
         history = []
-        try:
-            for cover in self.__list_saved_covers()[:50]:
-                history.append({
-                    "name": cover.get("name", ""),
-                    "file": cover.get("name", ""),
-                    "library": cover.get("library", ""),
-                    "mtime": cover.get("mtime", ""),
-                    "size": cover.get("size", ""),
-                })
-        except Exception:
-            pass
+        for cover in all_covers[:min(self._covers_page_history_limit, self._history_visible)]:
+            history.append({
+                "name": cover.get("name", ""),
+                "file": cover.get("name", ""),
+                "title": cover.get("library") or "历史封面",
+                "library": cover.get("library", ""),
+                "mtime": cover.get("mtime", ""),
+                "size": cover.get("size", ""),
+            })
+        hero_image = self.__thumbnail(all_covers[0]["file"], (160, 90), 50) if all_covers else None
 
         warnings = []
         if not self._enabled:
@@ -1567,9 +1597,14 @@ class MediaCoverGenerator(_PluginBase):
                 "last_run_text": last_time,
                 "last_result": last_message,
                 "history": history,
+                "history_total": min(self._covers_page_history_limit, len(all_covers)),
+                "history_limit": self._covers_history_limit_per_library,
                 "checks": self.__page_checks(),
                 "cache_images": image_cache,
                 "cache_fonts": font_cache,
+                "hero_image": hero_image,
+                "local_preview": (self.__local_preview_context()
+                                  if self._page_tab == "style" else None),
             },
         }
 
