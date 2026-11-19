@@ -1,14 +1,14 @@
 {
   "MediaCoverGenerator": {
     "name": "动态封面工坊",
-    "description": "让媒体库封面动起来：8 款 GIF 动态风格，支持 Emby/Jellyfin（新前端框架完整复刻版）",
+    "description": "让媒体库封面动起来：8 款 GIF 动态风格（官方 vuetify 界面 + 兼容修复）",
     "labels": "动态封面,GIF,媒体库,Emby,Jellyfin",
     "version": "0.18.4",
     "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png",
     "author": "Kioo",
     "level": 1,
     "history": {
-      "v0.18.4": "完整复刻官方设置页（6组47项）与详情页（4页签，含真实预览/历史/维护）；修复 get_api 注册异常。"
+      "v0.18.4": "回退官方完整 vuetify 前端（预览/设置/关闭按钮），仅保留 get_api 异常修复。"
     }
   }
 }
