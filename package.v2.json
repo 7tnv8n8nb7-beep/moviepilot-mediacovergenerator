@@ -3,14 +3,12 @@
     "name": "动态封面工坊",
     "description": "让媒体库封面动起来：10 款 GIF 动态风格，支持 Emby/Jellyfin（官方 Vuetify 设置页）",
     "labels": "动态封面,GIF,媒体库,Emby,Jellyfin",
-    "version": "0.20.2",
+    "version": "0.21.0",
     "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png",
     "author": "Kioo",
     "level": 1,
     "history": {
-      "v0.20.2": "第 10 款「平铺」改为竖版海报三列错落倾斜平铺，整面海报墙斜向匀速平移。",
-      "v0.20.1": "第 10 款「平铺」改为每张海报 45° 菱形整齐平铺、整片沿 45° 斜向匀速平移。",
-      "v0.20.0": "新增第 10 款「平铺」动态风格：橙金背景、九宫格错落卡片波浪换图。",
+      "v0.21.0": "第 10 款改为全新「卷帘」：大卡+虚化背景，竖条依次下落换幕；移除旧「平铺」。",
       "v0.19.0": "新增第 9 款「层叠」动态风格，恢复官方 Vuetify 设置页与关闭按钮。"
     }
   }
