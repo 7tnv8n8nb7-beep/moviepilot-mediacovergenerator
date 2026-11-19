@@ -1274,137 +1274,99 @@ class Stack(Cover):
         return canvas
 
 
-# ---------------------------------------------------------------- 风格 10：平铺
+# ---------------------------------------------------------------- 风格 10：卷帘
 
 
-class Tile(Cover):
-    """参照国产剧分类封面：竖版海报分成几列、每列略带倾斜，彼此不重叠；整面海报墙斜向平移。"""
+class Shutter(Cover):
+    """整幅画面分成竖条依次下落换幕：虚化背景配一张大海报卡，标题固定在左侧。"""
 
-    TILTS = (12.0, -6.0, 3.0)       # 三列一组循环使用，海报墙看起来是随手贴上去的
-    GAP = 1.10                      # 间距系数，始终大于 1，海报之间不重叠
+    STRIPS = 8              # 竖条数量
+    SWEEP = 0.55            # 相邻竖条的延迟，占转场的比例
+    TRAVEL = 1.30           # 条落下的行程（画布高度的倍数），中段留出黑色缝
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        self.ground = self._background()
-        # 竖版海报，比例接近 2:3
-        self.card_h = int(H * 0.46)
-        self.card_w = int(self.card_h * 0.70)
+        # 每一幕 = 同一张海报的虚化背景 + 右侧大海报卡
+        card_h = int(H * 0.88)
+        card_w = int(card_h * 0.64)
         scale = 2
-        size = (self.card_w * scale, self.card_h * scale)
-        radius = int(14 * s * scale)
+        size = (card_w * scale, card_h * scale)
+        radius = int(16 * s * scale)
         mask = rounded_mask(size, radius, supersample=2)
-        border = border_layer(size, radius, (255, 255, 255, 46), 2 * s * scale)
-        self.cards = []
+        border = border_layer(size, radius, (255, 255, 255, 70), 2.5 * s * scale)
+        self.scenes = []
         for index in range(self.count):
-            card = ImageEnhance.Color(self.fit(index, size)).enhance(1.06).convert("RGBA")
+            canvas = self.backdrop(index, 0.34).convert("RGBA")
+            card = ImageEnhance.Contrast(self.fit(index, size)).enhance(1.05).convert("RGBA")
             card.alpha_composite(border)
             card.putalpha(mask)
-            self.cards.append(card)
+            turned = card.resize((card_w, card_h), Image.Resampling.BOX)
+            glow = turned.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 16 * s)))
+            shadow = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            shadow.paste(glow, (int(W * 0.76 - card_w / 2.0), int(H * 0.5 - card_h / 2.0 + 10 * s)))
+            canvas.alpha_composite(shadow)
+            canvas.alpha_composite(turned, (int(W * 0.76 - card_w / 2.0), int(H * 0.5 - card_h / 2.0)))
+            self.scenes.append(canvas)
 
-        # 旋转后占的最大范围，列距/行距都留出缝
-        angle = abs(self.TILTS[0])
-        bound_w = self.card_w * math.cos(math.radians(angle)) + self.card_h * math.sin(math.radians(angle))
-        bound_h = self.card_w * math.sin(math.radians(angle)) + self.card_h * math.cos(math.radians(angle))
-        self.pitch_x = int(bound_w * self.GAP + 4 * s)
-        self.pitch_y = int(bound_h * self.GAP + 4 * s)
-        # 三个一组的倾斜样式，平移一组列距后图案完全重复，循环无缝
-        self.shift = (3 * self.pitch_x, self.pitch_y)
-
-        self.tiles = []
-        for col in range(-2, 8):
-            tilt = self.TILTS[col % len(self.TILTS)]
-            for row in range(-3, 5):
-                x = W * 0.40 + col * self.pitch_x
-                y = H * 0.10 + row * self.pitch_y
-                if x + self.shift[0] + bound_w / 2.0 < 0 or x - bound_w / 2.0 > W:
-                    continue
-                if y + self.shift[1] + bound_h / 2.0 < 0 or y - bound_h / 2.0 > H:
-                    continue
-                self.tiles.append((col, row, x, y, tilt))
-        self.tiles.sort(key=lambda tile: (tile[2] + tile[3] * 0.02, tile[2]))
-        self._rotated = {}
-        self.panel = self._panel()
-        self.overlay = self._title()
-        self._cached = None
-
-    def _background(self):
-        """从左侧焦糖橙过渡到右侧明亮的金橙，右上角带一点光晕。"""
-        x_axis, y_axis = axes(self.size)
-        blend = np.clip(0.78 * x_axis + 0.22 * (1.0 - y_axis), 0.0, 1.0)
-        left = np.array((198, 103, 0), dtype=np.float32)
-        right = np.array((255, 181, 24), dtype=np.float32)
-        data = left[None, None, :] + (right - left)[None, None, :] * blend[..., None]
-        glow = np.exp(-(((x_axis - 0.83) / 0.30) ** 2 + ((y_axis - 0.34) / 0.46) ** 2)) * 16.0
-        data = np.clip(data + glow[..., None], 0, 255).astype(np.uint8)
-        return Image.fromarray(data, "RGB").convert("RGBA")
-
-    def _panel(self):
-        """左侧标题区：不透明橙色淡出到海报墙，盖住穿过来的海报。"""
-        x_axis, _y_axis = axes(self.size)
-        alpha = 1.0 - np.clip((x_axis - 0.26) / 0.20, 0.0, 1.0)
-        return rgba_from_alpha((198, 103, 0), alpha * 0.96)
-
-    def _title(self):
-        W, H, s = self.W, self.H, self.s
-        layer = Image.new("RGBA", self.size, (0, 0, 0, 0))
-        max_width = W * 0.44
+        # 左侧标题：白色竖条 + 主标题 + 英文小字
+        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        max_width = W * 0.40
         main = self.layout(max_width, part="main")
-        sub_text = str(self.title[1] or "").strip() or "SERIES"
+        sub_text = str(self.title[1] or "").strip()
         if sub_text.isascii():
             sub_text = sub_text.upper()
-        sub = TitleLayout(("", sub_text), self.fonts, self.spec, self.s, max_width, part="sub")
-        gap = 18 * s
-        block_h = main.main_height + (gap + sub.height if sub.height else 0.0)
-        x = W * 0.052
+        sub = TitleLayout(("", sub_text), self.fonts, self.spec, self.s, max_width, part="sub") if sub_text else None
+        gap = 16 * s
+        block_h = main.main_height + (gap + sub.height if sub is not None and sub.height else 0.0)
+        x = W * 0.105
         y = H * 0.5 - block_h / 2.0 + self.spec.offset_y * s
-        shadow = self.text_shadow(90)
-        layer.alpha_composite(main.render(self.size, x, y, shadow=shadow))
-        sub_y = y + main.main_height + gap
-        if sub.height:
-            bar = Image.new("RGBA", self.size, (0, 0, 0, 0))
-            draw = ImageDraw.Draw(bar)
-            bar_h = min(sub.height, max(4.0, self.spec.sub_size * self.s * 0.78))
-            draw.rounded_rectangle(
-                (x, sub_y + (sub.height - bar_h) / 2.0,
-                 x + max(3.0, 30 * s), sub_y + (sub.height + bar_h) / 2.0),
-                radius=max(1.0, 4 * s), fill=(70, 214, 148, 255),
-            )
-            layer.alpha_composite(bar)
-            layer.alpha_composite(sub.render(self.size, x + max(3.0, 30 * s) + 12 * s, sub_y,
-                                             sub_fill=GHOST_WHITE + (255,), shadow=shadow))
-        return layer
-
-    def _tilted(self, index, tilt):
-        key = (index, tilt)
-        if key not in self._rotated:
-            turned = self.cards[index].rotate(tilt, resample=Image.Resampling.BILINEAR, expand=True)
-            final = turned.resize((max(1, turned.width // 2), max(1, turned.height // 2)), Image.Resampling.BOX)
-            glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 10 * self.s)))
-            shadow = Image.new("RGBA", final.size, (0, 0, 0, 0))
-            shadow.putalpha(glow.point(lambda value: int(value * 0.45)))
-            self._rotated[key] = (final, shadow)
-        return self._rotated[key]
+        shadow = self.text_shadow(110)
+        bar_w = max(3.0, 10 * s)
+        bar = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        ImageDraw.Draw(bar).rounded_rectangle(
+            (W * 0.075, y + 2 * s, W * 0.075 + bar_w, y + main.main_height - 2 * s),
+            radius=bar_w / 2.0, fill=GHOST_WHITE + (255,),
+        )
+        self.overlay.alpha_composite(bar)
+        self.overlay.alpha_composite(main.render(self.size, x, y, shadow=shadow))
+        if sub is not None and sub.height:
+            self.overlay.alpha_composite(sub.render(self.size, x, y + main.main_height + gap,
+                                                    sub_fill=(GHOST_WHITE[0], GHOST_WHITE[1], GHOST_WHITE[2], 216),
+                                                    shadow=shadow))
+        self._cached = None
 
     def frame(self, phase):
-        # hold=0：整面海报墙匀速斜向平移，不暂停；线性曲线保证速度恒定
-        current, _following, progress = beats(phase, self.count, hold=0.0, curve=lambda value: value)
-        key = (current, round(progress, 5))
+        current, following, progress = beats(phase, self.count, hold=0.66, curve=ease_in_out)
+        key = (current, following, round(progress, 4))
         if self._cached and self._cached[0] == key:
             return self._cached[1]
-        canvas = self.ground.copy()
-        dx = self.shift[0] * progress
-        dy = self.shift[1] * progress
-        for col, row, x, y, tilt in self.tiles:
-            card, shadow = self._tilted((current + col - 4 * row) % self.count, tilt)
-            composite_at(canvas, shadow, x + dx - card.width / 2.0, y + dy - card.height / 2.0 + 4 * self.s)
-            composite_at(canvas, card, x + dx - card.width / 2.0, y + dy - card.height / 2.0)
-        canvas.alpha_composite(self.panel)
+        blend = max(0.0, min(1.0, progress))
+        if blend <= 0:
+            canvas = self.scenes[current].copy()
+            canvas.alpha_composite(self.overlay)
+            self._cached = (key, canvas)
+            return canvas
+        canvas = Image.new("RGBA", self.size, (8, 8, 10, 255))
+        strip_w = self.W / self.STRIPS
+        travel = self.TRAVEL * self.H
+        for k in range(self.STRIPS):
+            delay = k / max(1, self.STRIPS - 1) * self.SWEEP
+            span = 1.0 - self.SWEEP
+            local = max(0.0, min(1.0, (progress - delay) / span))
+            x0 = int(k * strip_w)
+            x1 = int(min(self.W, (k + 1) * strip_w + 1))
+            if x1 <= x0:
+                continue
+            old = self.scenes[current].crop((x0, 0, x1, self.H))
+            new = self.scenes[following].crop((x0, 0, x1, self.H))
+            composite_at(canvas, old, x0, travel * local)
+            composite_at(canvas, new, x0, -travel * (1.0 - local))
         canvas.alpha_composite(self.overlay)
         self._cached = (key, canvas)
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack, 10: Tile}
+DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack, 10: Shutter}
 
 
 # ---------------------------------------------------------------- 输出
