@@ -99,9 +99,9 @@ STYLE_CATALOG = [
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=28),
     ),
     StyleInfo(
-        10, "平铺", "竖版海报分成三列错落倾斜平铺，彼此不重叠，标题落在左侧橙色区", "整面海报墙沿斜向匀速平移，循环无缝", 9, True, (72, 214, 146),
-        TypeSpec("glowbold", "interbold", "intersemi", 188, 88,
-                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=14, sub_upper=True),
+        10, "卷帘", "海报大卡配同画虚化背景铺满整幅，竖条从左到右依次落下换幕，标题固定左侧", "画面按竖条依次下落换幕，像卷帘逐格换景", 2, True, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 184, 58,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=16),
     ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
