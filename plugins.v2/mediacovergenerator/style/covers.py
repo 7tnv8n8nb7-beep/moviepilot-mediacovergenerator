@@ -1278,23 +1278,22 @@ class Stack(Cover):
 
 
 class Tile(Cover):
-    """暖橙色背景上九张近方形海报错开平铺，像国产剧分类封面那样逐格换图。"""
+    """参照国产剧分类封面：竖版海报分成几列、每列略带倾斜，彼此不重叠；整面海报墙斜向平移。"""
 
-    COLS = 3
-    ROWS = 3
-    # 每格倾斜角度，错开排出手贴上去的感觉
-    ANGLES = (-8, 6, -5, 7, -6, 8, -7, 5, -8)
+    TILTS = (12.0, -6.0, 3.0)       # 三列一组循环使用，海报墙看起来是随手贴上去的
+    GAP = 1.10                      # 间距系数，始终大于 1，海报之间不重叠
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
         self.ground = self._background()
-        self.card_h = int(H * 0.42)
-        self.card_w = int(self.card_h * 1.02)
+        # 竖版海报，比例接近 2:3
+        self.card_h = int(H * 0.46)
+        self.card_w = int(self.card_h * 0.70)
         scale = 2
         size = (self.card_w * scale, self.card_h * scale)
-        radius = int(20 * s * scale)
+        radius = int(14 * s * scale)
         mask = rounded_mask(size, radius, supersample=2)
-        border = border_layer(size, radius, (255, 255, 255, 48), 2 * s * scale)
+        border = border_layer(size, radius, (255, 255, 255, 46), 2 * s * scale)
         self.cards = []
         for index in range(self.count):
             card = ImageEnhance.Color(self.fit(index, size)).enhance(1.06).convert("RGBA")
@@ -1302,16 +1301,29 @@ class Tile(Cover):
             card.putalpha(mask)
             self.cards.append(card)
 
-        self.slots = []
-        for row in range(self.ROWS):
-            for col in range(self.COLS):
-                slot = row * self.COLS + col
-                x = W * (0.565 + col * 0.175 + (row % 2) * 0.012)
-                y = H * (0.14 + row * 0.34 - col * 0.018)
-                self.slots.append((x, y, self.ANGLES[slot % len(self.ANGLES)], row, col))
-        # 同一个角度的卡片只旋转一次，动图逐帧渲染时才不会重复开销
-        self._rotated = {}
+        # 旋转后占的最大范围，列距/行距都留出缝
+        angle = abs(self.TILTS[0])
+        bound_w = self.card_w * math.cos(math.radians(angle)) + self.card_h * math.sin(math.radians(angle))
+        bound_h = self.card_w * math.sin(math.radians(angle)) + self.card_h * math.cos(math.radians(angle))
+        self.pitch_x = int(bound_w * self.GAP + 4 * s)
+        self.pitch_y = int(bound_h * self.GAP + 4 * s)
+        # 三个一组的倾斜样式，平移一组列距后图案完全重复，循环无缝
+        self.shift = (3 * self.pitch_x, self.pitch_y)
 
+        self.tiles = []
+        for col in range(-2, 8):
+            tilt = self.TILTS[col % len(self.TILTS)]
+            for row in range(-3, 5):
+                x = W * 0.40 + col * self.pitch_x
+                y = H * 0.10 + row * self.pitch_y
+                if x + self.shift[0] + bound_w / 2.0 < 0 or x - bound_w / 2.0 > W:
+                    continue
+                if y + self.shift[1] + bound_h / 2.0 < 0 or y - bound_h / 2.0 > H:
+                    continue
+                self.tiles.append((col, row, x, y, tilt))
+        self.tiles.sort(key=lambda tile: (tile[2] + tile[3] * 0.02, tile[2]))
+        self._rotated = {}
+        self.panel = self._panel()
         self.overlay = self._title()
         self._cached = None
 
@@ -1325,6 +1337,12 @@ class Tile(Cover):
         glow = np.exp(-(((x_axis - 0.83) / 0.30) ** 2 + ((y_axis - 0.34) / 0.46) ** 2)) * 16.0
         data = np.clip(data + glow[..., None], 0, 255).astype(np.uint8)
         return Image.fromarray(data, "RGB").convert("RGBA")
+
+    def _panel(self):
+        """左侧标题区：不透明橙色淡出到海报墙，盖住穿过来的海报。"""
+        x_axis, _y_axis = axes(self.size)
+        alpha = 1.0 - np.clip((x_axis - 0.26) / 0.20, 0.0, 1.0)
+        return rgba_from_alpha((198, 103, 0), alpha * 0.96)
 
     def _title(self):
         W, H, s = self.W, self.H, self.s
@@ -1356,39 +1374,31 @@ class Tile(Cover):
                                              sub_fill=GHOST_WHITE + (255,), shadow=shadow))
         return layer
 
-    def _slot_card(self, index, slot):
-        key = (index, slot)
+    def _tilted(self, index, tilt):
+        key = (index, tilt)
         if key not in self._rotated:
-            _x, _y, angle, _row, _col = self.slots[slot]
-            turned = self.cards[index].rotate(angle, resample=Image.Resampling.BILINEAR, expand=True)
+            turned = self.cards[index].rotate(tilt, resample=Image.Resampling.BILINEAR, expand=True)
             final = turned.resize((max(1, turned.width // 2), max(1, turned.height // 2)), Image.Resampling.BOX)
-            glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 12 * self.s)))
+            glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 10 * self.s)))
             shadow = Image.new("RGBA", final.size, (0, 0, 0, 0))
-            shadow.putalpha(glow.point(lambda value: int(value * 0.5)))
+            shadow.putalpha(glow.point(lambda value: int(value * 0.45)))
             self._rotated[key] = (final, shadow)
         return self._rotated[key]
 
     def frame(self, phase):
-        current, _following, progress = beats(phase, self.count, hold=0.70, curve=ease_in_out)
-        key = (round(phase, 5), self.count)
+        # hold=0：整面海报墙匀速斜向平移，不暂停；线性曲线保证速度恒定
+        current, _following, progress = beats(phase, self.count, hold=0.0, curve=lambda value: value)
+        key = (current, round(progress, 5))
         if self._cached and self._cached[0] == key:
             return self._cached[1]
         canvas = self.ground.copy()
-        pulse = math.sin(math.pi * progress) if progress > 0 else 0.0
-        for slot, (x, y, _angle, row, col) in enumerate(self.slots):
-            dx = pulse * self.W * 0.012 * (1 if (row + col) % 2 == 0 else -1)
-            dy = -pulse * self.H * 0.018 * (1 if row % 2 == 0 else -1)
-            px, py = x + dx - self.card_w / 2.0, y + dy - self.card_h / 2.0
-            delay = (col + row * 0.18) / (self.COLS + self.ROWS * 0.18) * 0.34
-            local = max(0.0, min(1.0, (progress - delay) / (1.0 - 0.34)))
-            first, shadow = self._slot_card((current + slot) % self.count, slot)
-            composite_at(canvas, shadow, px, py + 8 * self.s)
-            if local <= 0.0:
-                composite_at(canvas, first, px, py)
-                continue
-            second, _second_shadow = self._slot_card((current + slot + 1) % self.count, slot)
-            composite_at(canvas, with_alpha(first, 1.0 - local), px, py)
-            composite_at(canvas, with_alpha(second, local), px, py)
+        dx = self.shift[0] * progress
+        dy = self.shift[1] * progress
+        for col, row, x, y, tilt in self.tiles:
+            card, shadow = self._tilted((current + col - 4 * row) % self.count, tilt)
+            composite_at(canvas, shadow, x + dx - card.width / 2.0, y + dy - card.height / 2.0 + 4 * self.s)
+            composite_at(canvas, card, x + dx - card.width / 2.0, y + dy - card.height / 2.0)
+        canvas.alpha_composite(self.panel)
         canvas.alpha_composite(self.overlay)
         self._cached = (key, canvas)
         return canvas
