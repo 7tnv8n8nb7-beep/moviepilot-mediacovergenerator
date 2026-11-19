@@ -1,5 +1,5 @@
 """
-八款封面风格的构图。每款有自己的切换方式，切换也是设计的一部分，不共用同一种转场。
+十款封面风格的构图。每款有自己的切换方式，切换也是设计的一部分，不共用同一种转场。
 
 每款风格是一个 Cover 子类：prepare() 预先算好不变的图层，frame(phase) 画出循环中某一时刻的画面。
 静态封面就是 phase=0 的高清帧，动图是同一套构图的低分辨率逐帧输出，所以两者外观一致。
@@ -1274,7 +1274,127 @@ class Stack(Cover):
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack}
+# ---------------------------------------------------------------- 风格 10：平铺
+
+
+class Tile(Cover):
+    """暖橙色背景上九张近方形海报错开平铺，像国产剧分类封面那样逐格换图。"""
+
+    COLS = 3
+    ROWS = 3
+    # 每格倾斜角度，错开排出手贴上去的感觉
+    ANGLES = (-8, 6, -5, 7, -6, 8, -7, 5, -8)
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        self.ground = self._background()
+        self.card_h = int(H * 0.42)
+        self.card_w = int(self.card_h * 1.02)
+        scale = 2
+        size = (self.card_w * scale, self.card_h * scale)
+        radius = int(20 * s * scale)
+        mask = rounded_mask(size, radius, supersample=2)
+        border = border_layer(size, radius, (255, 255, 255, 48), 2 * s * scale)
+        self.cards = []
+        for index in range(self.count):
+            card = ImageEnhance.Color(self.fit(index, size)).enhance(1.06).convert("RGBA")
+            card.alpha_composite(border)
+            card.putalpha(mask)
+            self.cards.append(card)
+
+        self.slots = []
+        for row in range(self.ROWS):
+            for col in range(self.COLS):
+                slot = row * self.COLS + col
+                x = W * (0.565 + col * 0.175 + (row % 2) * 0.012)
+                y = H * (0.14 + row * 0.34 - col * 0.018)
+                self.slots.append((x, y, self.ANGLES[slot % len(self.ANGLES)], row, col))
+        # 同一个角度的卡片只旋转一次，动图逐帧渲染时才不会重复开销
+        self._rotated = {}
+
+        self.overlay = self._title()
+        self._cached = None
+
+    def _background(self):
+        """从左侧焦糖橙过渡到右侧明亮的金橙，右上角带一点光晕。"""
+        x_axis, y_axis = axes(self.size)
+        blend = np.clip(0.78 * x_axis + 0.22 * (1.0 - y_axis), 0.0, 1.0)
+        left = np.array((198, 103, 0), dtype=np.float32)
+        right = np.array((255, 181, 24), dtype=np.float32)
+        data = left[None, None, :] + (right - left)[None, None, :] * blend[..., None]
+        glow = np.exp(-(((x_axis - 0.83) / 0.30) ** 2 + ((y_axis - 0.34) / 0.46) ** 2)) * 16.0
+        data = np.clip(data + glow[..., None], 0, 255).astype(np.uint8)
+        return Image.fromarray(data, "RGB").convert("RGBA")
+
+    def _title(self):
+        W, H, s = self.W, self.H, self.s
+        layer = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        max_width = W * 0.44
+        main = self.layout(max_width, part="main")
+        sub_text = str(self.title[1] or "").strip() or "SERIES"
+        if sub_text.isascii():
+            sub_text = sub_text.upper()
+        sub = TitleLayout(("", sub_text), self.fonts, self.spec, self.s, max_width, part="sub")
+        gap = 18 * s
+        block_h = main.main_height + (gap + sub.height if sub.height else 0.0)
+        x = W * 0.052
+        y = H * 0.5 - block_h / 2.0 + self.spec.offset_y * s
+        shadow = self.text_shadow(90)
+        layer.alpha_composite(main.render(self.size, x, y, shadow=shadow))
+        sub_y = y + main.main_height + gap
+        if sub.height:
+            bar = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(bar)
+            bar_h = min(sub.height, max(4.0, self.spec.sub_size * self.s * 0.78))
+            draw.rounded_rectangle(
+                (x, sub_y + (sub.height - bar_h) / 2.0,
+                 x + max(3.0, 30 * s), sub_y + (sub.height + bar_h) / 2.0),
+                radius=max(1.0, 4 * s), fill=(70, 214, 148, 255),
+            )
+            layer.alpha_composite(bar)
+            layer.alpha_composite(sub.render(self.size, x + max(3.0, 30 * s) + 12 * s, sub_y,
+                                             sub_fill=GHOST_WHITE + (255,), shadow=shadow))
+        return layer
+
+    def _slot_card(self, index, slot):
+        key = (index, slot)
+        if key not in self._rotated:
+            _x, _y, angle, _row, _col = self.slots[slot]
+            turned = self.cards[index].rotate(angle, resample=Image.Resampling.BILINEAR, expand=True)
+            final = turned.resize((max(1, turned.width // 2), max(1, turned.height // 2)), Image.Resampling.BOX)
+            glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 12 * self.s)))
+            shadow = Image.new("RGBA", final.size, (0, 0, 0, 0))
+            shadow.putalpha(glow.point(lambda value: int(value * 0.5)))
+            self._rotated[key] = (final, shadow)
+        return self._rotated[key]
+
+    def frame(self, phase):
+        current, _following, progress = beats(phase, self.count, hold=0.70, curve=ease_in_out)
+        key = (round(phase, 5), self.count)
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        canvas = self.ground.copy()
+        pulse = math.sin(math.pi * progress) if progress > 0 else 0.0
+        for slot, (x, y, _angle, row, col) in enumerate(self.slots):
+            dx = pulse * self.W * 0.012 * (1 if (row + col) % 2 == 0 else -1)
+            dy = -pulse * self.H * 0.018 * (1 if row % 2 == 0 else -1)
+            px, py = x + dx - self.card_w / 2.0, y + dy - self.card_h / 2.0
+            delay = (col + row * 0.18) / (self.COLS + self.ROWS * 0.18) * 0.34
+            local = max(0.0, min(1.0, (progress - delay) / (1.0 - 0.34)))
+            first, shadow = self._slot_card((current + slot) % self.count, slot)
+            composite_at(canvas, shadow, px, py + 8 * self.s)
+            if local <= 0.0:
+                composite_at(canvas, first, px, py)
+                continue
+            second, _second_shadow = self._slot_card((current + slot + 1) % self.count, slot)
+            composite_at(canvas, with_alpha(first, 1.0 - local), px, py)
+            composite_at(canvas, with_alpha(second, local), px, py)
+        canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
+        return canvas
+
+
+DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack, 10: Tile}
 
 
 # ---------------------------------------------------------------- 输出
