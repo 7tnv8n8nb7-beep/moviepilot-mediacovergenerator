@@ -98,6 +98,11 @@ STYLE_CATALOG = [
         TypeSpec("glowbold", "interbold", "intersemi", 190, 58,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=28),
     ),
+    StyleInfo(
+        10, "平铺", "暖橙色背景上九张近方形海报错开平铺，标题落在左侧留白", "海报按行列波浪式换位，整片卡片轻轻浮动", 9, True, (72, 214, 146),
+        TypeSpec("glowbold", "interbold", "intersemi", 188, 88,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=14, sub_upper=True),
+    ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
 
