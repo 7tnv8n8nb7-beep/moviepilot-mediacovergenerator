@@ -93,6 +93,11 @@ STYLE_CATALOG = [
         TypeSpec("serifblack", "dmserif", "intersemi", 196, 58,
                  main_tracking=0.03, main_tracking_latin=-0.005, spacing=18),
     ),
+    StyleInfo(
+        9, "层叠", "多张竖版海报像卡牌一样倾斜叠放，标题落在画面一侧", "最底下的卡片抽出、滑到最前面，依次轮转", 6, True, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 190, 58,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=28),
+    ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
 
