@@ -99,7 +99,7 @@ STYLE_CATALOG = [
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=28),
     ),
     StyleInfo(
-        10, "平铺", "暖橙色背景上九张近方形海报错开平铺，标题落在左侧留白", "海报按行列波浪式换位，整片卡片轻轻浮动", 9, True, (72, 214, 146),
+        10, "平铺", "竖版海报分成三列错落倾斜平铺，彼此不重叠，标题落在左侧橙色区", "整面海报墙沿斜向匀速平移，循环无缝", 9, True, (72, 214, 146),
         TypeSpec("glowbold", "interbold", "intersemi", 188, 88,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=14, sub_upper=True),
     ),
