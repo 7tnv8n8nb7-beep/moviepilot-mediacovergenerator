@@ -1187,7 +1187,94 @@ class Fan(Cover):
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan}
+# ---------------------------------------------------------------- 风格 9：层叠
+
+
+class Stack(Cover):
+    """多张竖版海报像卡牌一样倾斜叠放。每次最底下那张抽出、滑到最前面。"""
+
+    SLOT_GAP_X = 0.052      # 相邻卡片横向错开（画面宽度比例）
+    SLOT_GAP_Y = 0.018      # 相邻卡片纵向错开
+    SLOT_ROTATE = 7.0       # 相邻卡片旋转角度（度）
+    VISIBLE = 5             # 同时可见的卡片数
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        self.grounds = [self.backdrop(index, 0.32) for index in range(self.count)]
+        # 竖版海报卡片（放大 2 倍做旋转抗锯齿）
+        self.card_h = int(H * 0.72)
+        self.card_w = int(self.card_h * 0.68)
+        self.center = (W * 0.63, H * 0.52)
+        scale = 2
+        size = (self.card_w * scale, self.card_h * scale)
+        radius = int(26 * s * scale)
+        mask = rounded_mask(size, radius, supersample=2)
+        border = border_layer(size, radius, (255, 255, 255, 58), 3 * s * scale)
+        self.cards = []
+        for index in range(self.count):
+            card = ImageEnhance.Contrast(self.fit(index, size)).enhance(1.05).convert("RGBA")
+            card.alpha_composite(border)
+            card.putalpha(mask)
+            self.cards.append(card)
+        # 标题落在左侧的留白区
+        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        _x_axis, y_axis = axes(self.size)
+        self.shade = rgba_from_alpha(self.base_color(),
+                                     np.clip((0.62 - y_axis * 0.35) * self.scrim_strength(), 0, 1))
+        block, margin, _ink_h = self.title_block(W * 0.42, button=True, shadow=self.text_shadow(150))
+        composite_at(self.overlay, block, W * 0.045 - margin,
+                     H * 0.5 - block.height / 2.0 - margin + self.spec.offset_y * s)
+        self._cached = None
+
+    def _slot(self, rank):
+        """rank=0 是最前面一张，越大越靠后（更靠右上、更倾斜、更暗）。"""
+        W, H = self.W, self.H
+        x = self.center[0] + rank * self.SLOT_GAP_X * W
+        y = self.center[1] - rank * self.SLOT_GAP_Y * H
+        angle = -rank * self.SLOT_ROTATE
+        shade = 1.0 - min(0.5, rank * 0.11)
+        return x, y, angle, shade
+
+    def _draw(self, canvas, card, rank):
+        if rank < 0 or rank >= self.VISIBLE + 1:
+            return
+        x, y, angle, shade = self._slot(rank)
+        layer = ImageEnhance.Brightness(card).enhance(shade) if shade < 1.0 else card
+        turned = layer.rotate(angle, resample=Image.Resampling.BILINEAR, expand=True)
+        final = turned.resize((max(1, turned.width // 2), max(1, turned.height // 2)), Image.Resampling.BOX)
+        px, py = x - final.width / 2.0, y - final.height / 2.0
+        glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 14 * self.s)))
+        shadow = Image.new("RGBA", final.size, (0, 0, 0, 0))
+        shadow.putalpha(glow.point(lambda value: int(value * 0.55)))
+        composite_at(canvas, shadow, px, py + 10 * self.s)
+        composite_at(canvas, final, px, py)
+
+    def frame(self, phase):
+        current, following, progress = beats(phase, self.count, hold=0.66, curve=ease_in_out)
+        key = (current, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        blend = max(0.0, min(1.0, progress))
+        ground = self.grounds[current] if blend <= 0 else Image.blend(self.grounds[current], self.grounds[following], blend)
+        canvas = ground.convert("RGBA")
+        canvas.alpha_composite(self.shade)
+        # 从后往前画；轮转时所有卡片的 rank 一起减 progress，兼有插值过渡
+        for rank in range(self.VISIBLE, -1, -1):
+            slot_rank = rank - progress
+            if slot_rank < -0.5:
+                continue
+            # 抽出的那张（slot_rank 变负）淡出
+            img_index = (current + rank) % self.count
+            self._draw(canvas, self.cards[img_index], max(0.0, slot_rank))
+            if slot_rank < 0:
+                # 覆盖淡出：用一层底色轻遮将离场卡片渐隐
+                pass
+        canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
+        return canvas
+
+
+DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack}
 
 
 # ---------------------------------------------------------------- 输出
