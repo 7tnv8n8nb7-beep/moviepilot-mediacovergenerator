@@ -103,6 +103,21 @@ STYLE_CATALOG = [
         TypeSpec("glowbold", "interbold", "intersemi", 184, 58,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=16),
     ),
+    StyleInfo(
+        11, "画幅", "整幅画面就是一张带剧名的横版海报，标题压在左上角", "旧海报缓缓淡出，新海报随之淡入", 2, True, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 180, 58,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=18),
+    ),
+    StyleInfo(
+        12, "万花筒", "海报镜像成八瓣花窗铺满画面，暗角收边，标题落在中央", "花窗旋转半格交接下一张，循环无缝", 2, True, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 168, 56,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=14),
+    ),
+    StyleInfo(
+        13, "翻页", "主图卡在左，右侧标题和播放键，底下一排缩略图；换片时整页像书页一样翻过去", "整页翻过去露出下一张，缩略图随之左移补位", 5, True, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 180, 58,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=18),
+    ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
 
