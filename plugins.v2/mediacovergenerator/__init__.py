@@ -132,11 +132,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "动态封面工坊"
     # 插件描述
-    plugin_desc = "让媒体库封面动起来：10 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
+    plugin_desc = "让媒体库封面动起来：13 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.21.1"
+    plugin_version = "0.22.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2585,6 +2585,8 @@ class MediaCoverGenerator(_PluginBase):
             # 另一种比例的图只是锦上添花，下载失败不影响这个条目
             for url in urls[first + 1:]:
                 if self.__download_image(service, url, library['Name'], count=number, alt=True, retries=1):
+                    # 横版海报要带剧名：把条目的 Logo 合成到横版图左下角
+                    self.__stamp_logo(service, url, library['Name'], number)
                     break
             item_id = self.__get_item_id(item)
             if item_id:
@@ -2883,6 +2885,41 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as err:
             logger.error(f"下载图片异常：{str(err)}")
             return None
+
+    def __stamp_logo(self, service, imageurl, library_name, count):
+        """横版备用图左下角合成剧名 Logo（透明底图才合成），失败时保留原始横版图。"""
+        try:
+            match = re.search(r"/Items/([^/]+)/Images/", imageurl)
+            if not match or not service:
+                return
+            logo_url = f'[HOST]emby/Items/{match.group(1)}/Images/Logo?maxWidth=600&api_key=[APIKEY]'
+            response = service.instance.get_data(url=logo_url)
+            if response is None or response.status_code != 200 or not response.content:
+                return
+            import io
+            from PIL import ImageFilter
+            with Image.open(io.BytesIO(response.content)) as probe:
+                if probe.mode not in ("RGBA", "LA", "PA") and "transparency" not in probe.info:
+                    return
+                logo = probe.convert("RGBA")
+            filepath = self.__library_work_dir(library_name) / f"{count}{ALT_SUFFIX}.jpg"
+            if not filepath.is_file():
+                return
+            with Image.open(filepath) as backdrop_file:
+                backdrop = backdrop_file.convert("RGBA")
+            max_w = int(backdrop.width * 0.34)
+            if logo.width > max_w:
+                logo = logo.resize((max_w, max(1, int(logo.height * max_w / logo.width))),
+                                   Image.Resampling.LANCZOS)
+            pos = (int(backdrop.width * 0.035), backdrop.height - logo.height - int(backdrop.height * 0.05))
+            shadow = Image.new("RGBA", logo.size, (0, 0, 0, 0))
+            shadow.putalpha(logo.getchannel("A").point(lambda v: int(v * 0.65)))
+            backdrop.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(3)), (pos[0] + 2, pos[1] + 2))
+            backdrop.alpha_composite(logo, pos)
+            backdrop.convert("RGB").save(filepath, "JPEG", quality=88)
+            logger.info(f"横版素材已合成剧名 Logo：{self.__loggable_url(imageurl)}")
+        except Exception as err:
+            logger.warning(f"合成剧名 Logo 失败，使用原始横版图：{err}")
 
     @staticmethod
     def __loggable_url(url: str) -> str:
