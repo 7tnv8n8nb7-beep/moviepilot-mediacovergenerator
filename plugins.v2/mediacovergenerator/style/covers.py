@@ -1370,7 +1370,272 @@ class Shutter(Cover):
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack, 10: Shutter}
+def _marquee_title(self, y_ratio=0.055, bar_ratio=0.034):
+    """左上角标题：白色竖条 + 主标题 + 英文小字，幕布和展台共用。"""
+    W, H, s = self.W, self.H, self.s
+    layer = Image.new("RGBA", self.size, (0, 0, 0, 0))
+    max_width = W * 0.42
+    main = self.layout(max_width, part="main")
+    sub_text = str(self.title[1] or "").strip()
+    if sub_text.isascii():
+        sub_text = sub_text.upper()
+    sub = TitleLayout(("", sub_text), self.fonts, self.spec, self.s, max_width, part="sub") if sub_text else None
+    gap = 14 * s
+    block_h = main.main_height + (gap + sub.height if sub is not None and sub.height else 0.0)
+    x = W * 0.058
+    y = H * y_ratio
+    shadow = self.text_shadow(110)
+    bar_w = max(3.0, 9 * s)
+    bar = Image.new("RGBA", self.size, (0, 0, 0, 0))
+    ImageDraw.Draw(bar).rounded_rectangle(
+        (W * bar_ratio, y + 2 * s, W * bar_ratio + bar_w, y + main.main_height - 2 * s),
+        radius=bar_w / 2.0, fill=GHOST_WHITE + (255,),
+    )
+    layer.alpha_composite(bar)
+    layer.alpha_composite(main.render(self.size, x, y, shadow=shadow))
+    if sub is not None and sub.height:
+        layer.alpha_composite(sub.render(self.size, x, y + main.main_height + gap,
+                                         sub_fill=(GHOST_WHITE[0], GHOST_WHITE[1], GHOST_WHITE[2], 216),
+                                         shadow=shadow))
+    return layer
+
+
+# ---------------------------------------------------------------- 风格 12：万花筒
+
+
+class Kaleido(Cover):
+    """海报镜像成八瓣花窗铺满画面，暗角收边，标题落在中央。"""
+
+    WEDGES = 8
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        self.ground = Image.new("RGBA", self.size, self.base_color() + (255,))
+        side = int(H * 1.18)
+        box = int(side * 0.70)
+        self.side = side
+        self.mandalas = []
+        for index in range(self.count):
+            art = ImageOps.contain(self.picture(index).main.image, (box, box)).convert("RGB")
+            la = np.asarray(art, dtype=np.float32)
+            ah, aw = la.shape[:2]
+            # 极坐标镜像：把画面按 45° 楔形折叠回海报中心，形成真正的八瓣万花筒
+            ys, xs = np.meshgrid(np.arange(side, dtype=np.float32), np.arange(side, dtype=np.float32), indexing="ij")
+            dx, dy = xs - side / 2.0, ys - side / 2.0
+            radius = np.sqrt(dx * dx + dy * dy)
+            theta = np.arctan2(dy, dx)
+            sector = math.pi / self.WEDGES
+            fold = np.floor(theta / sector)
+            t = theta - fold * sector
+            t = np.where(fold % 2 > 0, sector - t, t)          # 奇数瓣镜像
+            src_r = radius * (min(ah, aw) * 0.62) / (side * 0.5)
+            src_a = t - sector / 2.0
+            sx = aw / 2.0 + src_r * np.cos(src_a)
+            sy = ah / 2.0 + src_r * np.sin(src_a)
+            sx = np.clip(sx, 0, aw - 1.001)
+            sy = np.clip(sy, 0, ah - 1.001)
+            xi, yi = sx.astype(np.int32), sy.astype(np.int32)
+            fx, fy = sx - xi, sy - yi
+            xj, yj = np.minimum(xi + 1, aw - 1), np.minimum(yi + 1, ah - 1)
+            wx = (1 - fx)[..., None]
+            wy = (1 - fy)[..., None]
+            arr = (la[yi, xi] * wx * wy + la[yi, xj] * (1 - wx) * wy
+                   + la[yj, xi] * wx * (1 - wy) + la[yj, xj] * (1 - wx) * (1 - wy))
+            xs_n, ys_n = np.meshgrid(np.linspace(-1.0, 1.0, side), np.linspace(-1.0, 1.0, side))
+            radius_n = xs_n ** 2 + ys_n ** 2
+            vig = np.clip(1.18 - 0.92 * radius_n, 0.10, 1.0)[..., None]
+            arr = np.clip(arr * vig * 0.9, 0, 255).astype(np.uint8)
+            mandala = Image.fromarray(arr).convert("RGBA")
+            self.mandalas.append(mandala)
+        # 中央标题后的暗色光晕，保证文字可读
+        xs, ys = np.meshgrid(np.linspace(-1.0, 1.0, W), np.linspace(-1.0, 1.0, H))
+        rr = np.sqrt((xs / 0.30) ** 2 + ((ys - 0.06) / 0.34) ** 2)
+        self.disc = rgba_from_alpha((8, 8, 10), np.clip(0.62 * np.exp(-rr ** 2), 0, 1))
+        self.overlay = self._center_title()
+        self._cached = None
+
+    def _center_title(self):
+        W, H, s = self.W, self.H, self.s
+        max_width = W * 0.62
+        main = self.layout(max_width, part="main")
+        sub_text = str(self.title[1] or "").strip()
+        if sub_text.isascii():
+            sub_text = sub_text.upper()
+        sub = TitleLayout(("", sub_text), self.fonts, self.spec, self.s, max_width, part="sub") if sub_text else None
+        gap = 14 * s
+        block_h = main.main_height + (gap + sub.height if sub is not None and sub.height else 0.0)
+        y0 = H * 0.5 - block_h / 2.0 + self.spec.offset_y * s
+        shadow = self.text_shadow(130)
+        layer = main.render_centered(self.size, W * 0.5, y0 + main.main_height / 2.0, shadow=shadow)
+        if sub is not None and sub.height:
+            layer.alpha_composite(sub.render_centered(self.size, W * 0.5, y0 + main.main_height + gap + sub.height / 2.0,
+                                                      sub_fill=(GHOST_WHITE[0], GHOST_WHITE[1], GHOST_WHITE[2], 216)))
+        return layer
+
+    def frame(self, phase):
+        current, following, progress = beats(phase, self.count, hold=0.58, curve=ease_in_out)
+        key = (current, following, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        blend = max(0.0, min(1.0, progress))
+        canvas = self.ground.copy()
+        if blend <= 0:
+            mandala = self.mandalas[current]
+            x = int(self.W * 0.5 - mandala.width / 2.0)
+            y = int(self.H * 0.5 - mandala.height / 2.0)
+            canvas.alpha_composite(mandala, (x, y))
+        else:
+            angle = 45.0
+            turned_a = self.mandalas[current].rotate(angle * blend, resample=Image.Resampling.BILINEAR)
+            turned_b = self.mandalas[following].rotate(-angle * (1.0 - blend), resample=Image.Resampling.BILINEAR)
+            mixed = Image.blend(turned_a, turned_b, blend)
+            x = int(self.W * 0.5 - mixed.width / 2.0)
+            y = int(self.H * 0.5 - mixed.height / 2.0)
+            canvas.alpha_composite(mixed, (x, y))
+        canvas.alpha_composite(self.disc)
+        canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
+        return canvas
+
+
+# ---------------------------------------------------------------- 风格 11：画幅
+
+
+class Frame(Cover):
+    """整幅画面就是一张带剧名的横版海报，标题压在左上角；换片时旧海报淡出、新海报淡入。"""
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        # 海报完整铺满整张画面：比例一致时正好全出血，不一致时用自身虚化图补边，不裁顶部
+        self.arts = []
+        for index in range(self.count):
+            source = self.picture(index).pick(W / float(H), clean=True)
+            art, _focus = source.contained((W, H))
+            self.arts.append(ImageEnhance.Contrast(art).enhance(1.04).convert("RGBA"))
+        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        _x_axis, y_axis = axes(self.size)
+        scrim = rgba_from_alpha((4, 4, 6), np.clip(smooth((0.30 - y_axis) / 0.30) * 0.45 * self.scrim_strength(), 0, 1))
+        self.overlay.alpha_composite(scrim)
+        block, margin, ink_h = self.title_block(W * 0.62, button=True, shadow=self.text_shadow(150))
+        title_top = int(4 * s) + self.spec.offset_y * s
+        composite_at(self.overlay, block, W * 0.046 - margin, title_top - margin)
+        self._cached = None
+
+    def frame(self, phase):
+        current, following, progress = beats(phase, self.count, hold=0.58, curve=ease_in_out)
+        key = (current, following, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        p = max(0.0, min(1.0, progress))
+        if p <= 0:
+            canvas = self.arts[current].copy()
+        else:
+            # 旧海报匀速淡出的同时新海报淡入
+            weight = ease_in_out(p)
+            canvas = Image.blend(self.arts[current], self.arts[following],
+                                 max(0.0, min(1.0, weight))).convert("RGBA")
+        canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
+        return canvas
+
+
+# ---------------------------------------------------------------- 风格 13：翻页
+
+
+class FlipPage(Cover):
+    """主图卡在左，右侧标题和播放键，底下一排缩略图。换片时整页像书页一样翻过去露出下一张。"""
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        self.grounds = [self.backdrop(index, 0.32) for index in range(self.count)]
+        _x_axis, y_axis = axes(self.size)
+        shade = 0.62 + smooth((y_axis - 0.45) / 0.45) * 0.36
+        self.shade = rgba_from_alpha(self.base_color(), np.clip(shade * self.scrim_strength(), 0, 1))
+        self.hero_w = int(W * 0.5)
+        self.hero_h = int(self.hero_w * 9 / 16.0)   # 16:9，横版素材正好整张放下
+        self.hero_box = (int(W * 0.046), int(H * 0.085))
+        self.hero_size = (self.hero_w, self.hero_h)
+        radius = int(36 * s)
+        self.hero_mask = rounded_mask(self.hero_size, radius)
+        self.heroes = [self._framed_poster(index, self.hero_w, self.hero_h) for index in range(self.count)]
+        hero_full = (*self.hero_box, self.hero_box[0] + self.hero_size[0], self.hero_box[1] + self.hero_size[1])
+        self.overlay = shadow_layer(self.size, hero_full, radius, 30 * s, 0.55, 12 * s)
+        text_x = W * 0.588
+        block, margin, ink_h = self.title_block(W * 0.37, sub_style="text", shadow=self.text_shadow(120))
+        chip = play_chip(self.spec.sub_size * s * 1.72, self.spec.sub_size * s * 3.0)
+        total = ink_h + 44 * s + chip.height
+        top = hero_full[1] + (self.hero_size[1] - total) / 2.0 + self.spec.offset_y * s
+        composite_at(self.overlay, block, text_x - margin, top - margin)
+        composite_at(self.overlay, chip, text_x, top + ink_h + 44 * s)
+        self.thumb_gap = int(W * 0.0125)
+        self.thumb_size = (int((W - self.hero_box[0] * 2 - self.thumb_gap * 3) / 4.0), int(H * 0.235))
+        self.thumb_y = int(H * 0.715)
+        self.thumb_x = self.hero_box[0]
+        self.thumb_mask = rounded_mask(self.thumb_size, int(26 * s))
+        self.thumbs = [self._framed_poster(index, self.thumb_size[0], self.thumb_size[1], brightness=0.86)
+                       for index in range(self.count)]
+        self._cached = None
+
+    def _framed_poster(self, index, width, height, brightness=None):
+        """按目标比例取整张横版素材：宽了从右侧裁、窄了从顶部裁，左下角的剧名始终完整。"""
+        source = self.picture(index).pick(width / float(height), clean=True)
+        img = source.image
+        target = width / float(height)
+        w, h = img.size
+        if w / h > target + 0.005:
+            img = img.crop((0, 0, int(round(h * target)), h))
+        elif w / h < target - 0.005:
+            img = img.crop((0, h - int(round(w / target)), w, h))
+        out = img.resize((width, height), Image.Resampling.LANCZOS)
+        out = ImageEnhance.Contrast(out).enhance(1.05)
+        if brightness is not None:
+            out = ImageEnhance.Brightness(out).enhance(brightness)
+        return out
+
+    def _thumbs(self, canvas, current, progress):
+        step = self.thumb_size[0] + self.thumb_gap
+        for slot in range(0, 5):
+            x_pos = int(round(self.thumb_x + (slot - progress) * step))
+            if x_pos > self.W or x_pos + self.thumb_size[0] < 0:
+                continue
+            canvas.paste(self.thumbs[(current + slot) % self.count], (x_pos, self.thumb_y), self.thumb_mask)
+
+    def frame(self, phase):
+        current, following, progress = beats(phase, self.count, hold=0.6, curve=ease_in_out)
+        key = (current, following, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        p = max(0.0, min(1.0, progress))
+        ground = self.grounds[current] if p <= 0 else Image.blend(self.grounds[current], self.grounds[following], p)
+        canvas = ground.convert("RGBA")
+        canvas.alpha_composite(self.shade)
+        canvas.alpha_composite(self.overlay)
+        if p <= 0:
+            canvas.paste(self.heroes[current], self.hero_box, self.hero_mask)
+            self._thumbs(canvas, current, 0.0)
+            self._cached = (key, canvas)
+            return canvas
+        self._thumbs(canvas, current, p)
+        # 翻页：书脊在主卡左缘，页面立起时最暗，前后两面分别是新旧海报
+        spine_x, top_y = self.hero_box[0], self.hero_box[1]
+        bot_y = self.hero_box[1] + self.hero_size[1]
+        turn = math.pi * p
+        width = self.hero_size[0] * abs(math.cos(turn))
+        skew = self.hero_size[1] * 0.05 * math.sin(turn)
+        under = self.heroes[following] if p >= 0.5 else \
+            ImageEnhance.Brightness(self.heroes[following]).enhance(1.0 - 0.30 * math.sin(math.pi * p))
+        canvas.paste(under, self.hero_box, self.hero_mask)
+        if width > 2:
+            face = self.heroes[current] if p < 0.5 else self.heroes[following]
+            page = ImageEnhance.Brightness(face).enhance(1.0 - 0.42 * math.sin(math.pi * p))
+            quad = [(spine_x, top_y + skew * 0.4), (spine_x + width, top_y + skew),
+                    (spine_x + width, bot_y - skew), (spine_x, bot_y - skew * 0.4)]
+            warp_onto(canvas, page.convert("RGBA"), quad)
+        self._cached = (key, canvas)
+        return canvas
+
+
+DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan, 9: Stack, 10: Shutter, 11: Frame, 12: Kaleido, 13: FlipPage}
 
 
 # ---------------------------------------------------------------- 输出
