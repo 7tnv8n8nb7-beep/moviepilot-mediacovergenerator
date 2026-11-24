@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.22.0"
+    plugin_version = "0.22.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -212,6 +212,7 @@ class MediaCoverGenerator(_PluginBase):
     _animation_resolution = DEFAULT_ANIMATION_RESOLUTION
     _animation_reduce_colors = 'medium'
     _animation_image_count = 6
+    _animation_auto_compensate = False
     _style_naming_v2 = True
     _sanitize_log_cache = set()
     _clean_images = False
@@ -328,6 +329,7 @@ class MediaCoverGenerator(_PluginBase):
                 self._animation_reduce_colors = "medium"
 
             self._animation_image_count = config.get("animation_image_count", config.get("animated_2_image_count", 6))
+            self._animation_auto_compensate = bool(config.get("animation_auto_compensate", False))
             self._clean_images = config.get("clean_images", False)
             self._clean_fonts = config.get("clean_fonts", False)
             self._save_recent_covers = config.get("save_recent_covers", True)
@@ -582,6 +584,7 @@ class MediaCoverGenerator(_PluginBase):
             "animation_resolution": self._animation_resolution,
             "animation_reduce_colors": self._animation_reduce_colors,
             "animation_image_count": self._animation_image_count,
+            "animation_auto_compensate": self._animation_auto_compensate,
             "bg_color_mode": self._bg_color_mode,
             "custom_bg_color": self._custom_bg_color,
             "clean_images": self._clean_images,
@@ -2226,6 +2229,7 @@ class MediaCoverGenerator(_PluginBase):
             animation_reduce_colors="medium" if self._preview_mode else self._animation_reduce_colors,
             stop_event=self._event,
             display_font=display_font,
+            auto_compensate=(not self._preview_mode) and self._animation_auto_compensate,
         )
 
     def __generate_from_server(self, service, library, title):
