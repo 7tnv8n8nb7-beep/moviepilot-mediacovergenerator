@@ -990,6 +990,10 @@ def _motion_tab() -> List[dict]:
                 _col(_text("animation_duration", "循环时长（秒）", "默认 12。图片多时可以加长，转场不会显得匆忙", number=True, icon_name="mdi-clock-outline", min=1, max=60), 6),
                 _col(_text("animation_fps", "帧率", "默认 15，GIF 不需要更高", number=True, icon_name="mdi-speedometer", min=1, max=30), 6),
             ),
+            _row(
+                _col(_switch("animation_auto_compensate", "自动补偿",
+                             "开启后，素材不足的媒体库（如图少的小库）自动按比例缩短循环时长，让每张图的展示时间和素材充足时一致，各库动画速度统一；关闭则严格按循环时长平分"), 12),
+            ),
         ),
     ]
 
@@ -1062,6 +1066,7 @@ def default_form_model() -> Dict[str, Any]:
         "animation_resolution": "400x225",
         "animation_reduce_colors": "medium",
         "animation_image_count": 6,
+        "animation_auto_compensate": False,
         "clean_images": False,
         "clean_fonts": False,
         "save_recent_covers": True,
