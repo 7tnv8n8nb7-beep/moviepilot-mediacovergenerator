@@ -115,7 +115,7 @@ FONT_FALLBACKS = {
 }
 # 字库最全的字体：风格字体缺字时（比如繁体、日文片名）换成它，不出现方框
 WIDEST_FONT = "glowbold"
-ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
+ANIMATION_RESOLUTIONS = ("192x108", "240x135", "320x180", "400x225", "480x270")
 DEFAULT_ANIMATION_RESOLUTION = "400x225"
 HISTORY_PAGE_SIZE = 8
 # 选图：候选是需要数量的几倍，最多多少个，评分用的小图尺寸
@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.22.2"
+    plugin_version = "0.22.3"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2482,7 +2482,8 @@ class MediaCoverGenerator(_PluginBase):
             url = f'[HOST]emby/Items/?api_key=[APIKEY]' \
                   f'&ParentId={parent_id}&SortBy={sort_by}&Limit={limit}' \
                   f'&StartIndex={offset}&IncludeItemTypes={include_types}' \
-                  f'&Recursive=True&SortOrder=Descending'
+                  f'&Recursive=True&SortOrder=Descending' \
+                  f'&Fields=ProviderIds'
 
             res = service.instance.get_data(url=url)
             if res:
@@ -2538,6 +2539,18 @@ class MediaCoverGenerator(_PluginBase):
                 return f"album:{item.get('AlbumId')}"
             if item.get("ParentBackdropItemId"):
                 return f"parent:{item.get('ParentBackdropItemId')}"
+
+        # 同一部作品的多个版本（如 4K 与 1080p 各自成条目）只取一次：
+        # 优先按 TMDB ID 去重，刮削信息缺失时回退「名称+年份」
+        provider_ids = item.get("ProviderIds") or {}
+        if isinstance(provider_ids, dict):
+            for key, value in provider_ids.items():
+                if str(key).lower() == "tmdb" and value:
+                    return f"tmdb:{str(value).strip()}"
+        name = str(item.get("Name") or "").strip()
+        if name:
+            year = item.get("ProductionYear") or item.get("Year") or ""
+            return f"title:{name}|{year}"
 
         if item.get("Id"):
             return f"item:{item.get('Id')}"
