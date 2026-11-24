@@ -970,7 +970,7 @@ def _motion_tab() -> List[dict]:
     return [
         div(
             "mcg-notice", icon("mdi-information-outline"),
-            div(None, text="Hills、yamby、小幻影视都能播放。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg，没有时自动生成静态封面。"),
+            div(None, text="Hills、yamby、小幻影视、SenPlayer 都能播放。Emby 只在原图直接透传时保留动画：请求不带 format 参数、且缩放宽度不小于动图宽度时才会动，一旦服务器转码（缩放或转格式）就只剩第一帧。某个客户端是静态图，通常是它带了 format 参数或请求宽度小于动图宽度——前者只能向客户端反馈，后者可把尺寸调小试试（如 240×135）。需要容器内有 ffmpeg，没有时自动生成静态封面。"),
         ),
         _section(
             "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，320×180 一张通常 1.5 到 3 MB",
@@ -979,6 +979,8 @@ def _motion_tab() -> List[dict]:
                     {"title": "480×270（最清晰，部分客户端会变静态）", "value": "480x270"},
                     {"title": "400×225（推荐）", "value": "400x225"},
                     {"title": "320×180（体积最小，兼容最好）", "value": "320x180"},
+                    {"title": "240×135（兼容更多客户端）", "value": "240x135"},
+                    {"title": "192×108（几乎不会被压缩）", "value": "192x108"},
                 ], icon_name="mdi-aspect-ratio"), 4),
                 _col(_select("animation_reduce_colors", "颜色数量", [
                     {"title": "256 色（画质最好）", "value": "off"},
