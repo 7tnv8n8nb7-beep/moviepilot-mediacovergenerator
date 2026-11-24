@@ -1766,7 +1766,7 @@ def _accent_and_tint(image, info, config):
 def create_cover(index, animated, library_dir, title, fonts, spec, size, image_count=None,
                  blur_size=50, color_ratio=0.8, bg_color_config=None,
                  animation_duration=12, animation_fps=15, animation_reduce_colors="medium", stop_event=None,
-                 display_font=None):
+                 display_font=None, auto_compensate=False):
     """生成封面，返回图片的 base64：静态为 JPEG，动态为 GIF。失败时返回 False。"""
     info = style_info(index)
     try:
@@ -1782,7 +1782,12 @@ def create_cover(index, animated, library_dir, title, fonts, spec, size, image_c
                                    display_font=display_font)
         if not animated:
             return encode_jpeg(cover.frame(0.0))
-        return encode_gif(cover.frame, animation_duration, animation_fps, animation_reduce_colors, stop_event)
+        duration = animation_duration
+        if auto_compensate and len(images) < count:
+            # 素材不足的媒体库按比例缩短总时长，让每张图的展示时间与素材充足时一致
+            duration = max(2, float(animation_duration) * len(images) / float(count))
+            logger.info(f"素材 {len(images)}/{count} 张，自动补偿：循环时长 {duration:.1f} 秒")
+        return encode_gif(cover.frame, duration, animation_fps, animation_reduce_colors, stop_event)
     except Exception as error:
         logger.error(f"生成风格「{info.name}」失败: {error}", exc_info=True)
         return False
