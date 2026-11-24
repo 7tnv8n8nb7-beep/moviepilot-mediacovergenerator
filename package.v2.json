@@ -3,11 +3,12 @@
     "name": "动态封面工坊",
     "description": "让媒体库封面动起来：13 款 GIF 动态风格，支持 Emby/Jellyfin（官方 Vuetify 设置页）",
     "labels": "动态封面,GIF,媒体库,Emby,Jellyfin",
-    "version": "0.22.2",
+    "version": "0.22.3",
     "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png",
     "author": "Kioo",
     "level": 1,
     "history": {
+      "v0.22.3": "同一作品的多版本条目（如 4K 与 1080p）按 TMDB ID 或名称+年份去重，只抓取并只计一次；新增 240×135 与 192×108 动图尺寸，便于更多客户端透传动画；完善动图兼容说明。",
       "v0.22.2": "选图改为尽量抓满轮播数量：合格图优先、评分较低者垫后，不再因「宁缺毋滥」只抓 2 张；素材不足仍由自动补偿兜底。",
       "v0.22.1": "GIF 动图设置新增「自动补偿」开关：素材不足的媒体库自动缩短循环时长，各库动画速度保持一致。",
       "v0.22.0": "新增第 11 款「画幅」与第 13 款「翻页」，达 13 款风格；横版素材自动合成剧名 Logo；修复翻页大图剧名被裁。",
