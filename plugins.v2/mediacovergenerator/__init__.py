@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.22.1"
+    plugin_version = "0.22.2"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2307,9 +2307,9 @@ class MediaCoverGenerator(_PluginBase):
         给每个候选下载一张小图打分，挑出适合做封面的：太暗、发糊的截图、脸部特写过近的往后放。
         第一张是静态封面和动图的第一帧，放分数最高的。评分失败的条目按合格处理，不会因此少图。
         """
-        # 风格一屏要摆的图不能少，多出来的轮换图宁可少几张；预览的全部风格共用一批，按最多的那款算
-        minimum = (max(entry.slots for entry in STYLE_CATALOG) if self._preview_mode
-                   else style_info(self.__current_index()).slots)
+        # 风格一屏要摆的图不能少；合格图不够时也要按分数把候选补满到需求张数，
+        # 尽量抓满轮播图，素材不足的部分再交给自动补偿处理
+        minimum = required
         # 条目不多、没得挑时也要打分：至少把最好的那张放在第一帧
         if len(items) <= 1:
             return items
